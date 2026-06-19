@@ -6,11 +6,11 @@ from typing import Any
 from dotenv import load_dotenv
 from jinja2 import Template
 from openai import OpenAI
-from sqlalchemy import bindparam, select
+from sqlalchemy import bindparam, exists, select
 from sqlalchemy.orm import sessionmaker
 
 from postgres.database_connection import connect_to_db
-from postgres.schemas.advertising.models import Ad
+from postgres.schemas.advertising.models import Ad, Ad_Occurrence
 from quotaclimat.data_ingestion.advertising.s03_classification.ad_classification_schema import \
     build_ad_classification_model
 from quotaclimat.data_ingestion.advertising.s03_classification.pipeline.llm_chat import \
@@ -30,8 +30,12 @@ from quotaclimat.utils.logger import getLogger
 CONFIDENCE_MAP = {"LOW": 1, "MEDIUM": 2, "HIGH": 3}
 
 
-def select_pending(engine, limit: int | None) -> list[tuple[str, str | None]]:
-    """Return (ad_id, transcript) for ads not yet classified."""
+def select_pending(
+    engine, limit: int | None, channel: str | None = None
+) -> list[tuple[str, str | None]]:
+    """Return (ad_id, transcript) for ads not yet classified. If a channel is specified,
+    only ads that have at least one (non-deleted) occurrence on that channel are returned.
+    """
     Session = sessionmaker(bind=engine)
     with Session() as session:
         stmt = (
@@ -40,6 +44,14 @@ def select_pending(engine, limit: int | None) -> list[tuple[str, str | None]]:
             .where(Ad.fragment_type != "no_data")
             .order_by(Ad.first_detection_date.desc())
         )
+        if channel:
+            stmt = stmt.where(
+                exists().where(
+                    Ad_Occurrence.ad_id == Ad.id,
+                    Ad_Occurrence.channel_name == channel,
+                    Ad_Occurrence.deleted_at.is_(None),
+                )
+            )
         if limit:
             stmt = stmt.limit(limit)
         return [(r[0], r[1]) for r in session.execute(stmt).all()]
@@ -199,6 +211,7 @@ def run(
     retries: int = 1,
     limit: int | None = None,
     prompt_path: str = "src/prompts/ad_type.yaml",
+    channel: str | None = None,
 ) -> dict[str, int]:
     load_dotenv()
     model_settings = VLMSettings()  # type: ignore[call-arg]
@@ -215,7 +228,7 @@ def run(
     engine = connect_to_db(use_custom_json_serializer=True)
     session_factory = sessionmaker(bind=engine)
 
-    pending = select_pending(engine, limit)
+    pending = select_pending(engine, limit, channel=channel)
     ad_ids = [aid for aid, _ in pending]
     transcripts = {aid: t for aid, t in pending}
 
@@ -257,4 +270,5 @@ if __name__ == "__main__":
             "PROMPT_PATH",
             "quotaclimat/data_ingestion/advertising/s03_classification/prompts/ad_type.yaml",
         ),
+        channel=os.environ.get("CHANNEL") or None,
     )
