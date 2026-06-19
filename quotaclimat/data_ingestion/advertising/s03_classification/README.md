@@ -81,6 +81,12 @@ VLM_API_TOKEN=xxx-...
 ASR_MODEL_NAME=
 ASR_API_URL=https://your-asr-endpoint.example.com/v1
 ASR_API_TOKEN=xxx-...
+
+# Brand dictionary (stages 3 & 5) — optional, defaults to local Excel
+# DICT_SOURCE=local
+# DICT_SOURCE=google_sheets
+# DICT_SPREADSHEET_ID=1abc...xyz
+# DICT_GOOGLE_CREDENTIALS=/path/to/service-account.json
 ```
 
 **Stage runtime variables** (per stage, all optional):
@@ -95,6 +101,10 @@ ASR_API_TOKEN=xxx-...
 | `RETRIES` | 1, 2, 4 | 0 / 1                           | Transport-error retries (parse errors are never retried) |
 | `PROMPT_PATH` | 2, 4 | `.../prompts/ad_type.yaml` etc. | Path to the YAML prompt file |
 | `AUDIT_PATH` | 5 | `data/brand_merges.csv`         | CSV dump of brand merges for human review |
+| `DICT_SOURCE` | 3, 5 | `local`                         | `local` (Excel file) or `google_sheets` |
+| `DICT_SPREADSHEET_ID` | 3, 5 | unset | Google Sheet ID (required when `DICT_SOURCE=google_sheets`) |
+| `DICT_GOOGLE_CREDENTIALS` | 3, 5 | unset | Path to Google service-account JSON (required when `DICT_SOURCE=google_sheets`) |
+| `DICT_VERSIONS_DIR` | 3, 5 | `reference_data/dictionary_versions/` | Local cache for versioned dictionary snapshots |
 
 ### LLM endpoint requirements
 
@@ -168,13 +178,15 @@ Stage 4 doesn't pass a schema (it uses `{"type": "json_object"}`) because the su
 
 ### Stage 3: `e03_dict_match.py` + `dictionary/matcher.py`
 
-Pure Python, no LLM. Loads `reference_data/dictionnaire_marques_secteurs.xlsx` once into three tiers:
+Pure Python, no LLM. Loads the brand dictionary once into three tiers (from a local Excel file or Google Sheets, configured via `DICT_*` env vars — see below):
 
 - **Tier 1**: brand alone determines `(sector, sub-category)`. Hits become `dict_tier1`.
 - **Tier 2**: brand determines sector; product keywords (matched against the LLM's `product_name` plus the transcript) pick the sub-category. Keyword hit => `dict_tier2`. No keyword hit => `dict_tier2_no_kw` (sector kept, sub-category sent to stage 4).
 - **Tier 3**: ambiguous brands that span multiple sectors. Only resolves with a keyword hit (`dict_tier3`); without one (`dict_tier3_no_kw`), nothing is committed and the row falls through to stage 4 with the LLM's sector prediction.
 
 Brand keys are normalised (accents stripped, lowercased, punctuation removed) and de-spaced before lookup, so `Coca-Cola`, `coca cola`, and `cocacola` all become the same key.
+
+Each `dict_match` entry in the `prediction` column includes `dict_version` and `dict_content_hash` so you can trace which dictionary snapshot was used for that ad.
 
 ### Stage 5: `e05_canonicalise_brand.py`
 
@@ -188,12 +200,23 @@ A `data/brand_merges.csv` audit file is written on every run so merges can be re
 
 ## Taxonomy and dictionary
 
-The taxonomy comes from two Excel files in `reference_data/`:
+The taxonomy comes from a local Excel file in `reference_data/`:
 
 - `classification_pub_ome.xlsx`: sector list and sub-category list per sector. Loaded by `taxonomy.py` at import time. Provides `SECTOR_LIST` (rendered for the stage 2 prompt) and `get_subcategory_list(sector_code)` (rendered for stage 4).
-- `dictionnaire_marques_secteurs.xlsx`: brand => sector/sub-category mappings across the three tiers. Loaded by `BrandDictionary` in `matcher.py`.
 
-=> Weak spot that could be improved in the future as the brand dictionary is a living file that may be updated over time.
+The brand dictionary is loaded by `BrandDictionary` in `matcher.py` (stages 3 and 5). By default it reads `reference_data/dictionnaire_marques_secteurs.xlsx`. To use a Google Sheet instead, set `DICT_SOURCE=google_sheets` and provide `DICT_SPREADSHEET_ID` and `DICT_GOOGLE_CREDENTIALS`.
+
+The Google Sheet must expose three tabs with the same names and columns as the Excel file:
+
+| Tab | Columns |
+|---|---|
+| `marques_type_1` | `nom_marque`, `secteur`, `catégorie` |
+| `marques_type_2` | `nom_marque`, `secteur`, `catégorie`, `mots_clés_produit` |
+| `marques_type_3` | `nom_marque`, `secteur`, `catégorie`, `mots_clés_produit` |
+
+Share the sheet with the service-account email as Viewer. On each run, the pipeline fetches the sheet, compares a content hash against the latest cached copy in `reference_data/dictionary_versions/`, and reuses the cache when nothing changed. When the sheet is updated, a new timestamped snapshot is saved (e.g. `20250619T143022Z_a1b2c3d4/dictionnaire_marques_secteurs.xlsx`) and registered in `manifest.json`.
+
+Stage 3 records the dictionary version on every classified ad in the `prediction` JSON (`dict_version`, `dict_content_hash` on the `dict_match` entry). Local-only mode (`DICT_SOURCE=local`) uses a stable version id derived from the file hash (`local_a1b2c3d4`).
 
 ## Status reference
 

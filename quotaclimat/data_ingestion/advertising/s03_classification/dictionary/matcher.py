@@ -17,10 +17,19 @@ import pandas as pd
 
 from quotaclimat.data_ingestion.advertising.s03_classification.dictionary.normalize import (
     normalize, nospace)
-
-DICT_PATH = Path(
-    "quotaclimat/data_ingestion/advertising/s03_classification/reference_data/dictionnaire_marques_secteurs.xlsx"
+from quotaclimat.data_ingestion.advertising.s03_classification.dictionary.sheets_loader import (
+    read_dictionary_sheet,
 )
+from quotaclimat.data_ingestion.advertising.s03_classification.dictionary.version_store import (
+    resolve_dictionary,
+    resolve_local_dictionary,
+)
+from quotaclimat.data_ingestion.advertising.s03_classification.settings import (
+    DEFAULT_DICT_LOCAL_PATH,
+    BrandDictionarySettings,
+)
+
+DICT_PATH = DEFAULT_DICT_LOCAL_PATH
 
 
 def _brand_key(name: str | None) -> str:
@@ -53,11 +62,23 @@ def _haystack(product: str | None, transcript: str | None) -> str:
 
 
 class BrandDictionary:
-    def __init__(self, path: str | Path = DICT_PATH):
-        path = Path(path)
-        self.t1 = self._load_tier1(pd.read_excel(path, sheet_name="marques_type_1"))
-        self.t2 = self._load_tier2(pd.read_excel(path, sheet_name="marques_type_2"))
-        self.t3 = self._load_tier3(pd.read_excel(path, sheet_name="marques_type_3"))
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        *,
+        settings: BrandDictionarySettings | None = None,
+    ):
+        settings = settings or BrandDictionarySettings()
+        if path is not None:
+            local_path = Path(path)
+            self.version = resolve_local_dictionary(local_path)
+        else:
+            self.version = resolve_dictionary(settings)
+            local_path = self.version.local_path
+
+        self.t1 = self._load_tier1(read_dictionary_sheet(local_path, "marques_type_1"))
+        self.t2 = self._load_tier2(read_dictionary_sheet(local_path, "marques_type_2"))
+        self.t3 = self._load_tier3(read_dictionary_sheet(local_path, "marques_type_3"))
         print(f"t1={type(self.t1)}, t2={type(self.t2)}, t3={type(self.t3)}")
         print(
             f"t1 keys={len(self.t1) if self.t1 else 0}, t2 keys={len(self.t2) if self.t2 else 0}, t3 keys={len(self.t3) if self.t3 else 0}"

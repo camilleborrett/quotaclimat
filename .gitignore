@@ -13,6 +13,7 @@ test/i8n
 llm/
 cc-bio.json
 *.xlsx
+quotaclimat/data_ingestion/advertising/s03_classification/reference_data/dictionary_versions/
 coverage_re
 **/data_explo/**
 # Byte-compiled / optimized / DLL files

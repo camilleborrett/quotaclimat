@@ -41,9 +41,15 @@ def _ad_type_entry(prediction: list[dict] | None) -> dict:
 
 
 def _build_dict_match_entry(
-    match: DictMatch | None, brand_in: str | None
+    match: DictMatch | None,
+    brand_in: str | None,
+    dict_version,
 ) -> dict | None:
     timestamp = datetime.now(timezone.utc).isoformat()
+    version_fields = {
+        "dict_version": dict_version.version_id,
+        "dict_content_hash": dict_version.content_hash,
+    }
 
     if match is None:
         if not brand_in:
@@ -53,6 +59,7 @@ def _build_dict_match_entry(
             "timestamp": timestamp,
             "method": "dict_miss",
             "brand_in": brand_in,
+            **version_fields,
         }
 
     entry: dict[str, Any] = {
@@ -62,6 +69,7 @@ def _build_dict_match_entry(
         "matched_brand": match.matched_brand,
         "sector_code": match.sector_code,
         "subcat_code": match.subcat_code,
+        **version_fields,
     }
     if match.matched_keyword is not None:
         entry["matched_keyword"] = match.matched_keyword
@@ -107,6 +115,12 @@ def run(batch_size: int = 500, limit: int | None = None) -> dict[str, int]:
         return {}
 
     bd = BrandDictionary()
+    logging.info(
+        "[dict_match] dictionary version=%s hash=%s path=%s",
+        bd.version.version_id,
+        bd.version.content_hash[:8],
+        bd.version.local_path,
+    )
     counts: dict[str, int] = {}
     buf: list[dict] = []
     progress = tqdm.tqdm(pending, desc="dict_match", smoothing=0.05)
@@ -142,7 +156,7 @@ def run(batch_size: int = 500, limit: int | None = None) -> dict[str, int]:
                 canonical_brand = match.matched_brand
 
             existing = list(prediction) if prediction else []
-            audit_entry = _build_dict_match_entry(match, brand)
+            audit_entry = _build_dict_match_entry(match, brand, bd.version)
             if audit_entry is not None:
                 existing = [e for e in existing if e.get("stage") != "dict_match"]
                 existing.append(audit_entry)
