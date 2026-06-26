@@ -82,7 +82,7 @@ ASR_MODEL_NAME=
 ASR_API_URL=https://your-asr-endpoint.example.com/v1
 ASR_API_TOKEN=xxx-...
 
-# Brand dictionary (stages 3 & 5) — optional, defaults to local Excel
+# Brand dictionary (stages 3 & 5) - optional, defaults to local Excel
 # DICT_SOURCE=local
 # DICT_SOURCE=google_sheets
 # DICT_SPREADSHEET_ID=1abc...xyz
@@ -178,7 +178,7 @@ Stage 4 doesn't pass a schema (it uses `{"type": "json_object"}`) because the su
 
 ### Stage 3: `e03_dict_match.py` + `dictionary/matcher.py`
 
-Pure Python, no LLM. Loads the brand dictionary once into three tiers (from a local Excel file or Google Sheets, configured via `DICT_*` env vars — see below):
+Pure Python, no LLM. Loads the brand dictionary once into three tiers (from a local Excel file or Google Sheets, configured via `DICT_*` env vars):
 
 - **Tier 1**: brand alone determines `(sector, sub-category)`. Hits become `dict_tier1`.
 - **Tier 2**: brand determines sector; product keywords (matched against the LLM's `product_name` plus the transcript) pick the sub-category. Keyword hit => `dict_tier2`. No keyword hit => `dict_tier2_no_kw` (sector kept, sub-category sent to stage 4).
@@ -204,7 +204,7 @@ The taxonomy comes from a local Excel file in `reference_data/`:
 
 - `classification_pub_ome.xlsx`: sector list and sub-category list per sector. Loaded by `taxonomy.py` at import time. Provides `SECTOR_LIST` (rendered for the stage 2 prompt) and `get_subcategory_list(sector_code)` (rendered for stage 4).
 
-The brand dictionary is loaded by `BrandDictionary` in `matcher.py` (stages 3 and 5). By default it reads `reference_data/dictionnaire_marques_secteurs.xlsx`. To use a Google Sheet instead, set `DICT_SOURCE=google_sheets` and provide `DICT_SPREADSHEET_ID` and `DICT_GOOGLE_CREDENTIALS`.
+The brand dictionary is loaded by `BrandDictionary` in `matcher.py` (stages 3 and 5). By default, it reads `reference_data/dictionnaire_marques_secteurs.xlsx`. To use a shared Google Sheet instead, set `DICT_SOURCE=google_sheets` and provide `DICT_SPREADSHEET_ID` and `DICT_GOOGLE_CREDENTIALS`.
 
 The Google Sheet must expose three tabs with the same names and columns as the Excel file:
 

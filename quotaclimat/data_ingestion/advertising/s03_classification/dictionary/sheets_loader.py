@@ -13,7 +13,7 @@ from quotaclimat.data_ingestion.advertising.s03_classification.settings import (
     BrandDictionarySettings,
 )
 
-SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
+SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 
 TIER_SHEET_NAMES = (
     "marques_type_1",
@@ -28,8 +28,12 @@ def _gspread_client(credentials_path: str) -> gspread.Client:
     return gspread.authorize(creds)
 
 
+def get_client(credentials_path: str | Path) -> gspread.Client:
+    return _gspread_client(str(credentials_path))
+
+
 def _read_google_sheet(spreadsheet_id: str, sheet_name: str, credentials_path: Path) -> pd.DataFrame:
-    worksheet = _gspread_client(str(credentials_path)).open_by_key(spreadsheet_id).worksheet(
+    worksheet = get_client(credentials_path).open_by_key(spreadsheet_id).worksheet(
         sheet_name
     )
     records = worksheet.get_all_records()
